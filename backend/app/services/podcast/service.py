@@ -1,14 +1,11 @@
 import ast
-import os
-import shutil
-import subprocess
 import uuid
 
-import edge_tts
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from ...core.settings import settings
 from ...models.podcast import (
     Episode,
     EpisodeStatus,
@@ -19,7 +16,7 @@ from ...models.podcast import (
     Voice,
 )
 from ...services.llm.service import llm_service
-from ...services.tts.service import tts_service
+from ...services.tts.service import synthesize
 
 
 class PodcastService:
@@ -166,7 +163,7 @@ class PodcastService:
         await self.db.flush()
         return job
 
-    async def generate_audio(self, episode_id: uuid.UUID) -> GenerationJob:
+    async def generate_audio(self, episode_id: uuid.UUID, voice: str | None = None) -> GenerationJob:
         episode = await self.get_episode(episode_id)
 
         if not episode.script:
@@ -176,7 +173,6 @@ class PodcastService:
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Episode must have a script before generating audio"
             )
 
-        # Create job
         job = GenerationJob(episode_id=episode_id, job_type="tts", status=JobStatus.RUNNING)
         self.db.add(job)
         await self.db.flush()
@@ -185,49 +181,36 @@ class PodcastService:
             episode.status = EpisodeStatus.GENERATING_AUDIO
             await self.db.flush()
 
-            import ast
             import logging
-
             log = logging.getLogger(__name__)
 
-            # Parse the script — it's a string repr of a dict
             try:
                 script_data = ast.literal_eval(episode.script)
             except (ValueError, SyntaxError):
                 script_data = {"segments": [{"speaker": "host", "text": episode.script}]}
 
             segments = script_data.get("segments", [])
-
-            # Build full text — join all segments for single TTS call
-            full_text_parts = []
-            for seg in segments:
-                text = seg.get("text", "").strip()
-                if text:
-                    full_text_parts.append(text)
-
-            full_text = " ".join(full_text_parts)
+            full_text = " ".join(seg.get("text", "").strip() for seg in segments if seg.get("text", "").strip())
             if not full_text:
                 full_text = episode.script
 
-            # Truncate if too long (Edge TTS limit ~10 min)
-            if len(full_text) > 50000:
-                full_text = full_text[:50000]
+            log.info(f"TTS for episode {episode_id}, text_len={len(full_text)}")
 
-            log.info(f"Generating TTS for episode {episode_id}, text length: {len(full_text)}")
+            output_file = f"ep_{episode_id.hex[:8]}.mp3"
+            audio_path = await synthesize(
+                text=full_text,
+                output_filename=output_file,
+                voice=voice,
+            )
 
-            output_file = settings.audio_storage_dir / f"ep_{episode_id.hex[:8]}.mp3"
-
-            communicate = edge_tts.Communicate(full_text, "en-US-GuyNeural")
-            await communicate.save(str(output_file))
-
-            episode.audio_file_path = str(output_file)
+            episode.audio_file_path = audio_path
             episode.status = EpisodeStatus.COMPLETED
             episode.duration_seconds = 0.0
             job.status = JobStatus.COMPLETED
             job.progress = 1.0
-            job.result = {"audio_path": str(output_file)}
+            job.result = {"audio_path": audio_path}
 
-            log.info(f"TTS completed for episode {episode_id}: {output_file}")
+            log.info(f"TTS done: {audio_path}")
 
         except Exception as e:
             import logging

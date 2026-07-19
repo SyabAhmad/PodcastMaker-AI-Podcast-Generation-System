@@ -77,6 +77,7 @@ class EpisodeResponse(BaseModel):
     episode_number: int
     title: str
     status: str
+    script: str | None = None
     audio_file_path: str | None
     duration_seconds: float | None
     created_at: datetime
@@ -104,6 +105,7 @@ class GenerateScriptRequest(BaseModel):
 
 class GenerateAudioRequest(BaseModel):
     episode_id: uuid.UUID
+    voice: str | None = None
 
 
 class GenerateFullRequest(BaseModel):

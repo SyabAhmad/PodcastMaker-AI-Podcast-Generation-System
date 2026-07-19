@@ -23,9 +23,33 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
-    # Coqui / XTTS (TTS)
-    XTTS_API_URL: str = "http://localhost:5002"
-    XTTS_MODEL: str = "xtts_v2"
+    # TTS Provider
+    TTS_PROVIDER: str = "edge"
+
+    # Edge TTS
+    EDGE_TTS_ENABLED: str = "1"
+    EDGE_TTS_VOICE: str = "en-US-GuyNeural"
+
+    # OpenAI TTS
+    OPENAI_TTS_ENABLED: str = "0"
+    OPENAI_API_KEY: str = ""
+    OPENAI_TTS_MODEL: str = "tts-1"
+    OPENAI_TTS_VOICE: str = "nova"
+
+    # ElevenLabs TTS
+    ELEVENLABS_TTS_ENABLED: str = "0"
+    ELEVENLABS_API_KEY: str = ""
+    ELEVENLABS_VOICE_ID: str = "21m00Tcm4TlvDq8ikWAM"
+
+    # Available voices (comma-separated: provider:voice_id:name)
+    AVAILABLE_VOICES: str = (
+        "edge:en-US-GuyNeural:host,"
+        "edge:en-US-JennyNeural:guest,"
+        "edge:en-US-AriaNeural:narrator,"
+        "edge:en-US-DavisNeural:deep,"
+        "edge:en-US-SaraNeural:energetic,"
+        "edge:en-GB-RyanNeural:british"
+    )
 
     # JWT
     JWT_SECRET_KEY: str = "change-me"
@@ -58,6 +82,36 @@ class Settings(BaseSettings):
         p = Path(self.AUDIO_STORAGE_PATH)
         p.mkdir(parents=True, exist_ok=True)
         return p
+
+    @property
+    def enabled_tts_providers(self) -> list[str]:
+        providers = []
+        if self.EDGE_TTS_ENABLED == "1":
+            providers.append("edge")
+        if self.OPENAI_TTS_ENABLED == "1" and self.OPENAI_API_KEY:
+            providers.append("openai")
+        if self.ELEVENLABS_TTS_ENABLED == "1" and self.ELEVENLABS_API_KEY:
+            providers.append("elevenlabs")
+        return providers
+
+    @property
+    def parsed_voices(self) -> list[dict]:
+        voices = []
+        for entry in self.AVAILABLE_VOICES.split(","):
+            parts = entry.strip().split(":")
+            if len(parts) >= 3:
+                voices.append({
+                    "provider": parts[0],
+                    "voice_id": parts[1],
+                    "name": parts[2],
+                })
+            elif len(parts) == 2:
+                voices.append({
+                    "provider": "edge",
+                    "voice_id": parts[0],
+                    "name": parts[1],
+                })
+        return voices
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

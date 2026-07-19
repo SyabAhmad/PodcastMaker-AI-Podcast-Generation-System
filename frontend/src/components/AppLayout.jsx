@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../lib/api';
 import {
@@ -9,10 +9,11 @@ import {
   Headphones,
   Mic,
   BarChart3,
-  Settings,
+  Zap,
   ChevronLeft,
   ChevronRight,
-  Zap,
+  Podcast,
+  Loader2,
 } from 'lucide-react';
 
 const navSections = [
@@ -35,15 +36,20 @@ export default function AppLayout() {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [stats, setStats] = useState({ podcasts: 0, episodes: 0 });
+  const [podcasts, setPodcasts] = useState([]);
+  const [podcastsLoading, setPodcastsLoading] = useState(true);
 
-  useEffect(() => {
-    api.listPodcasts().then((podcasts) => {
+  const loadPodcasts = () => {
+    api.listPodcasts().then((p) => {
+      setPodcasts(p);
       setStats({
-        podcasts: podcasts.length,
-        episodes: podcasts.reduce((acc, p) => acc + (p.episodes?.length || 0), 0),
+        podcasts: p.length,
+        episodes: p.reduce((acc, pod) => acc + (pod.episodes?.length || 0), 0),
       });
-    }).catch(() => {});
-  }, []);
+    }).catch(() => {}).finally(() => setPodcastsLoading(false));
+  };
+
+  useEffect(() => { loadPodcasts(); }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -56,12 +62,12 @@ export default function AppLayout() {
       <aside className={`${collapsed ? 'w-[68px]' : 'w-64'} bg-white border-r border-border flex flex-col shrink-0 transition-all duration-200`}>
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border">
-          <div className="flex items-center gap-2.5">
+          <Link to="/dashboard" className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-purple-400 flex items-center justify-center shrink-0">
               <Headphones className="w-4 h-4 text-white" />
             </div>
             {!collapsed && <span className="font-bold text-sm tracking-tight text-ink">PodcastMaker</span>}
-          </div>
+          </Link>
           <button
             onClick={() => setCollapsed(!collapsed)}
             className="p-1 rounded-md text-muted hover:text-ink hover:bg-surface transition-colors"
@@ -72,19 +78,19 @@ export default function AppLayout() {
 
         {/* Quick stats */}
         {!collapsed && (
-          <div className="px-4 py-4 border-b border-border">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-2.5 bg-accent/5 rounded-lg">
-                <div className="flex items-center gap-1.5 mb-1">
+          <div className="px-4 py-3 border-b border-border">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-2 bg-accent/5 rounded-lg">
+                <div className="flex items-center gap-1 mb-0.5">
                   <Mic className="w-3 h-3 text-accent" />
-                  <span className="text-[10px] font-medium text-muted uppercase tracking-wider">Podcasts</span>
+                  <span className="text-[10px] font-medium text-muted uppercase tracking-wider">Shows</span>
                 </div>
                 <p className="text-lg font-bold text-ink">{stats.podcasts}</p>
               </div>
-              <div className="p-2.5 bg-purple-500/5 rounded-lg">
-                <div className="flex items-center gap-1.5 mb-1">
+              <div className="p-2 bg-purple-500/5 rounded-lg">
+                <div className="flex items-center gap-1 mb-0.5">
                   <BarChart3 className="w-3 h-3 text-purple-500" />
-                  <span className="text-[10px] font-medium text-muted uppercase tracking-wider">Episodes</span>
+                  <span className="text-[10px] font-medium text-muted uppercase tracking-wider">Eps</span>
                 </div>
                 <p className="text-lg font-bold text-ink">{stats.episodes}</p>
               </div>
@@ -93,11 +99,11 @@ export default function AppLayout() {
         )}
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-5">
+        <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-4">
           {navSections.map(({ label, items }) => (
             <div key={label}>
               {!collapsed && (
-                <p className="px-3 mb-1.5 text-[10px] font-semibold text-muted/60 uppercase tracking-wider">
+                <p className="px-3 mb-1 text-[10px] font-semibold text-muted/60 uppercase tracking-wider">
                   {label}
                 </p>
               )}
@@ -122,6 +128,42 @@ export default function AppLayout() {
               </div>
             </div>
           ))}
+
+          {/* Podcasts list */}
+          {!collapsed && podcasts.length > 0 && (
+            <div>
+              <p className="px-3 mb-1 text-[10px] font-semibold text-muted/60 uppercase tracking-wider">
+                Your Podcasts
+              </p>
+              <div className="space-y-0.5">
+                {podcastsLoading ? (
+                  <div className="flex items-center justify-center py-3">
+                    <Loader2 className="w-4 h-4 text-muted animate-spin" />
+                  </div>
+                ) : (
+                  podcasts.slice(0, 10).map((podcast) => (
+                    <NavLink
+                      key={podcast.id}
+                      to={`/podcasts/${podcast.id}`}
+                      className={({ isActive }) =>
+                        `flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-xs transition-all ${
+                          isActive
+                            ? 'bg-accent/10 text-accent font-medium'
+                            : 'text-muted hover:text-ink hover:bg-surface'
+                        }`
+                      }
+                    >
+                      <Podcast className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{podcast.title}</span>
+                      {podcast.status === 'generating' && (
+                        <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                      )}
+                    </NavLink>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </nav>
 
         {/* Pro banner */}

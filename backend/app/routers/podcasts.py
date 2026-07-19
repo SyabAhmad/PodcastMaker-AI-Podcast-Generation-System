@@ -163,8 +163,8 @@ async def generate_script(
 async def generate_audio(
     body: GenerateAudioRequest, user_id: str = Depends(get_current_user_id), svc: PodcastService = Depends(get_service)
 ):
-    """Generate audio for an episode using Coqui TTS."""
-    return await svc.generate_audio(episode_id=body.episode_id)
+    """Generate audio for an episode using TTS."""
+    return await svc.generate_audio(episode_id=body.episode_id, voice=body.voice)
 
 
 @router.post("/generate/full", response_model=PodcastDetail)
