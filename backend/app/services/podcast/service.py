@@ -1,5 +1,10 @@
+import ast
+import os
+import shutil
+import subprocess
 import uuid
 
+import edge_tts
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -179,10 +184,6 @@ class PodcastService:
         try:
             episode.status = EpisodeStatus.GENERATING_AUDIO
             await self.db.flush()
-
-            import ast
-            import subprocess
-            import shutil
 
             # Parse the script — it's a string repr of a dict
             script_data = ast.literal_eval(episode.script)
