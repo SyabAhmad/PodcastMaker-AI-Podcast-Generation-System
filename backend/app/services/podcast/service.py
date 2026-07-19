@@ -185,71 +185,54 @@ class PodcastService:
             episode.status = EpisodeStatus.GENERATING_AUDIO
             await self.db.flush()
 
+            import ast
+            import logging
+
+            log = logging.getLogger(__name__)
+
             # Parse the script — it's a string repr of a dict
-            script_data = ast.literal_eval(episode.script)
+            try:
+                script_data = ast.literal_eval(episode.script)
+            except (ValueError, SyntaxError):
+                script_data = {"segments": [{"speaker": "host", "text": episode.script}]}
+
             segments = script_data.get("segments", [])
 
-            if segments:
-                # Multi-speaker: synthesize each segment with the right voice
-                segment_files = []
-                for i, seg in enumerate(segments):
-                    speaker = seg.get("speaker", "")
-                    text = seg.get("text", "")
-                    if not text:
-                        continue
+            # Build full text — join all segments for single TTS call
+            full_text_parts = []
+            for seg in segments:
+                text = seg.get("text", "").strip()
+                if text:
+                    full_text_parts.append(text)
 
-                    # Map speaker to voice role
-                    role = "host" if i % 2 == 0 else "guest"
-                    voice = tts_service.voices.get(role, "en-US-GuyNeural")
+            full_text = " ".join(full_text_parts)
+            if not full_text:
+                full_text = episode.script
 
-                    filename = f"ep_{episode_id.hex[:8]}_{i}.mp3"
-                    filepath = settings.audio_storage_dir / filename
+            # Truncate if too long (Edge TTS limit ~10 min)
+            if len(full_text) > 50000:
+                full_text = full_text[:50000]
 
-                    communicate = edge_tts.Communicate(text, voice)
-                    await communicate.save(str(filepath))
-                    segment_files.append(str(filepath))
+            log.info(f"Generating TTS for episode {episode_id}, text length: {len(full_text)}")
 
-                # Concatenate all segments into one file using ffmpeg
-                if segment_files:
-                    output_file = settings.audio_storage_dir / f"ep_{episode_id.hex[:8]}.mp3"
-                    list_file = settings.audio_storage_dir / f"ep_{episode_id.hex[:8]}_list.txt"
+            output_file = settings.audio_storage_dir / f"ep_{episode_id.hex[:8]}.mp3"
 
-                    # Write file list for ffmpeg
-                    with open(list_file, "w") as f:
-                        for sf in segment_files:
-                            f.write(f"file '{sf}'\n")
+            communicate = edge_tts.Communicate(full_text, "en-US-GuyNeural")
+            await communicate.save(str(output_file))
 
-                    ffmpeg = shutil.which("ffmpeg")
-                    if ffmpeg:
-                        subprocess.run(
-                            [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(list_file), "-c", "copy", str(output_file)],
-                            capture_output=True,
-                        )
-                        episode.audio_file_path = str(output_file)
-                    else:
-                        # No ffmpeg — just use the last segment
-                        episode.audio_file_path = segment_files[-1] if segment_files else None
-
-                    # Clean up segment files
-                    for sf in segment_files:
-                        os.remove(sf)
-                    if list_file.exists():
-                        os.remove(list_file)
-            else:
-                # Fallback: single speaker
-                audio_path = await tts_service.synthesize(
-                    text=episode.script,
-                    output_filename=f"ep_{episode_id.hex[:8]}.mp3",
-                )
-                episode.audio_file_path = audio_path
-
+            episode.audio_file_path = str(output_file)
             episode.status = EpisodeStatus.COMPLETED
             episode.duration_seconds = 0.0
             job.status = JobStatus.COMPLETED
             job.progress = 1.0
-            job.result = {"audio_path": episode.audio_file_path}
+            job.result = {"audio_path": str(output_file)}
+
+            log.info(f"TTS completed for episode {episode_id}: {output_file}")
 
         except Exception as e:
+            import logging
+            log = logging.getLogger(__name__)
+            log.error(f"TTS failed for episode {episode_id}: {e}")
             episode.status = EpisodeStatus.FAILED
             job.status = JobStatus.FAILED
             job.error_message = str(e)
