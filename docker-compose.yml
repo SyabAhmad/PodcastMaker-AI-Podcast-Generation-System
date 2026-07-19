@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: podcastmaker-postgres
+    environment:
+      POSTGRES_USER: podcastmaker
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: podcastmaker
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U podcastmaker"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: podcastmaker-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  xtts:
+    image: coqui/xtts:latest
+    container_name: podcastmaker-xtts
+    ports:
+      - "5002:5002"
+    volumes:
+      - xtts_models:/root/.local/share/tts
+    # Uncomment and set GPU if available:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  postgres_data:
+  redis_data:
+  xtts_models:
